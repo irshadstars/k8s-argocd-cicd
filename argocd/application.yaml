@@ -1,0 +1,75 @@
+# ArgoCD Application: the bootstrap link between git and the cluster.
+#
+# Deliberately OUTSIDE manifests/ so ArgoCD does not manage its own definition.
+# Apply once by hand:
+#
+#   kubectl apply -f argocd/application.yaml
+#
+# The annotations below are read by argocd-image-updater, which runs as a
+# separate controller in the argocd namespace. They are what turn "ArgoCD
+# deploys what git says" into "a code push reaches a pod with no manual step".
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: webapp
+  namespace: argocd
+
+  annotations:
+    # Which images to track, as <alias>=<image>. The alias namespaces the
+    # per-image settings below; it does not need to match anything in the
+    # manifests, but matching the container name keeps it readable.
+    argocd-image-updater.argoproj.io/image-list: webapp=ghcr.io/irshadstars/k8s-argocd-cicd
+
+    # newest-build picks the most recently *built* tag, using the creation
+    # timestamp from the registry. Correct here because sha- tags carry no
+    # ordering information — semver would sort, content hashes will not.
+    argocd-image-updater.argoproj.io/webapp.update-strategy: newest-build
+
+    # Only tags produced by CI are eligible. Without this, any tag pushed to the
+    # repository by hand could be deployed automatically — this is the guard
+    # that keeps a stray `docker push :test` out of the cluster.
+    argocd-image-updater.argoproj.io/webapp.allow-tags: regexp:^sha-[0-9a-f]{7}$
+
+    # git write-back commits the new tag to the repository, so git stays the
+    # source of truth. The alternative (argocd write-back) patches the live
+    # Application instead, which means the cluster and git silently disagree —
+    # exactly the drift GitOps exists to prevent.
+    #
+    # Requires a secret named git-creds in the argocd namespace, holding a
+    # GitHub PAT with repo scope. Created by hand, never committed:
+    #   kubectl -n argocd create secret generic git-creds \
+    #     --from-literal=username=irshadstars \
+    #     --from-literal=password=<PAT>
+    argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/git-creds
+
+    # Write to the kustomization's images: block rather than the default
+    # .argocd-source-webapp.yaml override file. Keeping the tag in a file a
+    # human would naturally read means `kubectl kustomize manifests/` locally
+    # renders exactly what is deployed.
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
+
+  finalizers:
+    # Deleting this Application also removes what it created, rather than
+    # orphaning the resources in the cluster.
+    - resources-finalizer.argocd.argoproj.io
+
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/irshadstars/k8s-argocd-cicd.git
+    targetRevision: main
+    path: manifests
+
+  destination:
+    server: https://kubernetes.default.svc
+
+  syncPolicy:
+    automated:
+      # prune: remove cluster resources when their manifest leaves git.
+      prune: true
+      # selfHeal: revert manual kubectl changes back to the git state.
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

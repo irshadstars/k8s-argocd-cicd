@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp
+  namespace: cicd
+  labels:
+    app: webapp
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: webapp
+
+  strategy:
+    rollingUpdate:
+      # With 4 replicas and minAvailable: 2 in the PDB, allowing one pod down at
+      # a time keeps the rollout comfortably inside the budget while still
+      # replacing pods promptly.
+      maxUnavailable: 1
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      # Gives the app time to fail readiness, let endpoint removal propagate,
+      # and drain in-flight requests. main.go sleeps 3s then shuts down with a
+      # 10s deadline, so 30 is generous but never reached in practice.
+      terminationGracePeriodSeconds: 30
+
+      # Spread replicas across nodes so a node loss cannot take out every pod.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          # Without this, the tainted control-plane node counts as a topology
+          # domain holding 0 pods. min=0 then makes a second pod on any worker a
+          # skew of 2, and replicas past the first two stay Pending forever
+          # against a constraint that can never be satisfied.
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              app: webapp
+
+      containers:
+        - name: webapp
+          # The tag here is a starting point only. manifests/kustomization.yaml
+          # holds the authoritative tag via its `images:` block, and ArgoCD
+          # Image Updater rewrites that block — not this line — on every build.
+          image: ghcr.io/irshadstars/k8s-argocd-cicd:sha-764996f
+          # IfNotPresent is safe precisely because tags are immutable content
+          # hashes: a given tag always means the same bytes, so there is never a
+          # reason to re-pull one already on the node.
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8080
+
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+
+          # Liveness asks "is the process wedged?" — failure restarts the
+          # container, so it must not depend on anything external.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+
+          # Readiness asks "should traffic come here?" — failure only removes
+          # the pod from Service endpoints. This is what makes the graceful
+          # shutdown in main.go actually work.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 5
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            # Must match the USER in the Dockerfile. distroless :nonroot is
+            # 65532; a mismatch here means the kubelet refuses to start the
+            # container rather than failing at runtime.
+            runAsUser: 65532
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault

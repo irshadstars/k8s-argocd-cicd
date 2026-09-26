@@ -1,0 +1,35 @@
+# This file is why manifests/ is a Kustomize app rather than plain YAML.
+#
+# ArgoCD Image Updater cannot update images in a plain directory application.
+# From the upstream docs: "Argo CD Image Updater can only update container
+# images for applications whose manifests are rendered using Kustomize, Helm, or
+# a Config Management Plugin." A kustomization.yaml is the cheapest way to
+# satisfy that — ArgoCD auto-detects this directory as Kustomize because this
+# file is present, so the Application spec needs no source type set.
+#
+# Render locally exactly as ArgoCD will:
+#   kubectl kustomize manifests/
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cicd
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+
+# THE AUTHORITATIVE IMAGE TAG.
+#
+# Image Updater rewrites the `newTag` below on every build, as though you had
+# run `kustomize edit set image`, and commits the change to git. This block —
+# not the image line in deployment.yaml — is what determines what runs.
+#
+# Because the updater only ever touches this file, and the build workflow
+# ignores changes outside app/ and Dockerfile, its commits cannot trigger a new
+# build. That is what keeps the pipeline from looping forever.
+images:
+  - name: ghcr.io/irshadstars/k8s-argocd-cicd
+    newTag: sha-764996f

@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: webapp
+  namespace: cicd
+spec:
+  # At least 2 of 4 replicas stay available during voluntary disruption, so
+  # `kubectl drain` blocks rather than breaching it.
+  #
+  # Only voluntary disruption is covered — drain and eviction. A hard node crash
+  # ignores this entirely, which is why topologySpreadConstraints matter too.
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: webapp
