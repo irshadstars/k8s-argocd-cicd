@@ -68,6 +68,11 @@ jobs:
         with:
           context: .
           push: true
+          # Both architectures are required: GitHub runners are amd64, but a
+          # kind cluster on an Apple Silicon Mac is arm64. An amd64-only image
+          # pulls fine in CI and then fails on the laptop with
+          # "no match for platform in manifest: not found".
+          platforms: linux/amd64,linux/arm64
           # Lowercase required: GHCR rejects uppercase repository paths, and
           # github.repository preserves the owner's original casing.
           tags: ${{ env.REGISTRY }}/${{ github.repository }}:${{ steps.meta.outputs.tag }}
