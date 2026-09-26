@@ -1,0 +1,22 @@
+# Keep the build context to just what the Dockerfile needs: app/ and nothing else.
+#
+# This is not only about speed. Everything in the context is sent to the Docker
+# daemon and is readable by any build stage, so excluding .git keeps repository
+# history — and anything ever committed and later removed — out of the build.
+
+.git/
+.github/
+.gitignore
+
+# Kubernetes and docs never participate in the build
+manifests/
+argocd/
+kind/
+docs/
+*.md
+
+# Local build artifacts
+webapp
+app/webapp
+
+.DS_Store

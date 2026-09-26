@@ -1,0 +1,33 @@
+# kind cluster for the CI/CD project: source code -> image -> running pod.
+#
+#   kind create cluster --config kind/cicd-cluster.yaml
+#
+# Deliberately separate from the `irshadproject` cluster so the two can run side
+# by side. That is also why the host port is 31080 rather than 30080 — the
+# irshadproject cluster already claims 30080, and two clusters cannot bind the
+# same host port. (The `edu` cluster holds host 80 and 443, so those are out too.)
+#
+# Two workers, not one: manifests/deployment.yaml uses topologySpreadConstraints,
+# which are satisfied trivially on a single node and therefore teach nothing.
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cicd
+
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Makes the NodePort reachable from macOS at http://localhost:31080 with
+      # no port-forward. Without this, every check needs a kubectl port-forward
+      # that dies with its parent process.
+      - containerPort: 31080
+        hostPort: 31080
+        protocol: TCP
+  - role: worker
+  - role: worker
+
+networking:
+  # Must not overlap the Docker bridge network kind runs on, or pod traffic
+  # routes into a black hole while the cluster still reports Ready.
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"

@@ -1,0 +1,79 @@
+name: build
+
+# Only application changes should trigger a build.
+#
+# This paths filter is what prevents an infinite loop. ArgoCD Image Updater
+# commits the new image tag back to manifests/kustomization.yaml on this same
+# branch. Without the filter, that commit would trigger this workflow, which
+# would push a new image, which the updater would commit again — forever.
+#
+# A `[skip ci]` marker in the updater's commit message would also work, but this
+# is structural: it cannot be defeated by someone editing a commit template.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/build.yaml"
+  # Lets you rebuild from the Actions tab without an empty commit.
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Least privilege. The default token is read-write across the repo; this
+      # narrows it to reading code and writing packages. Notably NOT
+      # contents: write — this workflow never commits, the updater does.
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN is minted per-run by Actions and expires with it.
+          # No repository secret to create, rotate, or leak.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          # Immutable, content-addressed tags. A mutable tag like :latest makes
+          # "which code is running?" unanswerable, and gives Image Updater
+          # nothing to compare — it detects a NEWER tag, not a changed one.
+          echo "tag=sha-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Lowercase required: GHCR rejects uppercase repository paths, and
+          # github.repository preserves the owner's original casing.
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}:${{ steps.meta.outputs.tag }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.tag }}
+            COMMIT=${{ github.sha }}
+            BUILT=${{ steps.meta.outputs.built }}
+          # Cache layers in the registry so unchanged dependency layers are not
+          # rebuilt on every run.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "### Pushed image" >> "$GITHUB_STEP_SUMMARY"
+          echo '`${{ env.REGISTRY }}/${{ github.repository }}:${{ steps.meta.outputs.tag }}`' >> "$GITHUB_STEP_SUMMARY"

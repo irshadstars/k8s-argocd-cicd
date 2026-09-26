@@ -1,0 +1,23 @@
+# Compiled binaries from a local `go build`
+/webapp
+/app/webapp
+*.exe
+
+# Go workspace and vendored deps
+/vendor/
+go.work
+go.work.sum
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+*.swp
+
+# Never commit these. kubeconfigs and env files are the two things most likely
+# to be dropped into a repo like this one by accident, and both carry live
+# credentials.
+kubeconfig
+*.kubeconfig
+.env
