@@ -48,7 +48,7 @@ spec:
           # The tag here is a starting point only. manifests/kustomization.yaml
           # holds the authoritative tag via its `images:` block, and ArgoCD
           # Image Updater rewrites that block — not this line — on every build.
-          image: ghcr.io/irshadstars/k8s-argocd-cicd:sha-eb0edfd
+          image: ghcr.io/irshadstars/k8s-argocd-cicd:sha-64d3a80
           # IfNotPresent is safe precisely because tags are immutable content
           # hashes: a given tag always means the same bytes, so there is never a
           # reason to re-pull one already on the node.

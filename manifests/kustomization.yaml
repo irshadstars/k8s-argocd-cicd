@@ -32,4 +32,4 @@ resources:
 # build. That is what keeps the pipeline from looping forever.
 images:
   - name: ghcr.io/irshadstars/k8s-argocd-cicd
-    newTag: sha-eb0edfd
+    newTag: sha-64d3a80
