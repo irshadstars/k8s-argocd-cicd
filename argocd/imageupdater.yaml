@@ -1,0 +1,93 @@
+# ImageUpdater CR — the v1.3.0 way to configure automatic image updates.
+#
+# WHY THIS FILE EXISTS INSTEAD OF ANNOTATIONS
+#
+# Nearly every argocd-image-updater guide online tells you to put
+# `argocd-image-updater.argoproj.io/*` annotations on the Application. That was
+# correct through v0.x, and it is what this repo originally did.
+#
+# v1.3.0 is a rewrite onto controller-runtime. It watches ImageUpdater CRs and
+# nothing else — the startup log says so plainly:
+#
+#   source="kind source: *v1alpha1.ImageUpdater"
+#   "No ImageUpdater CRs to process"
+#
+# The controller never lists Applications looking for annotations, so the
+# annotations on argocd/application.yaml are inert on this version. They are
+# kept there, commented, as a record of the older API.
+#
+# Apply once by hand (it configures the pipeline; it is not part of the app):
+#   kubectl apply -f argocd/imageupdater.yaml
+#
+# Verify it was picked up:
+#   kubectl -n argocd logs deploy/argocd-image-updater-controller --tail=40
+
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: webapp
+  # Must be the controller's own namespace: it is started with
+  # "Watching controller namespace only".
+  namespace: argocd
+
+spec:
+  applicationRefs:
+    # Which ArgoCD Applications this CR governs. Exact name here, but it is a
+    # pattern field — "webapp-*" would cover a family of apps.
+    - namePattern: webapp
+
+      images:
+        - # Namespaces the per-image settings. Matching the container name is a
+          # readability choice, not a requirement.
+          alias: webapp
+          imageName: ghcr.io/irshadstars/k8s-argocd-cicd
+
+          commonUpdateSettings:
+            # newest-build picks the most recently *built* tag using the
+            # registry's creation timestamp. Required here because sha- tags
+            # carry no ordering information — semver would sort, git hashes
+            # will not.
+            updateStrategy: newest-build
+
+            # Only CI-produced tags are eligible. Without this, a stray
+            # `docker push :test` would be deployed automatically.
+            allowTags: regexp:^sha-[0-9a-f]{7}$
+
+            # The image is a multi-arch index (amd64 + arm64). Pinning the
+            # platform the cluster actually runs on means the updater reads the
+            # arm64 manifest's timestamp rather than picking one arbitrarily.
+            platforms:
+              - linux/arm64
+
+          manifestTargets:
+            # Tells the updater to rewrite the `images:` entry in
+            # manifests/kustomization.yaml whose name matches this. Must equal
+            # the `name:` under `images:` in that file, or the edit silently
+            # matches nothing.
+            kustomize:
+              name: ghcr.io/irshadstars/k8s-argocd-cicd
+
+      writeBackConfig:
+        # git commits the new tag back to the repository, so git stays the
+        # source of truth. The default ("argocd") patches the live Application
+        # instead, which leaves the cluster and git silently disagreeing —
+        # exactly the drift GitOps exists to prevent.
+        #
+        # The secret:<namespace>/<name> suffix names a secret holding a GitHub
+        # PAT with repo scope. Created by hand, never committed:
+        #   kubectl -n argocd create secret generic git-creds \
+        #     --from-literal=username=irshadstars \
+        #     --from-literal=password=<PAT>
+        method: git:secret:argocd/git-creds
+
+        gitConfig:
+          branch: main
+          # Write into the kustomization's images: block rather than the default
+          # .argocd-source-webapp.yaml override file. Keeping the tag somewhere
+          # a human would naturally look means `kubectl kustomize manifests/`
+          # renders exactly what is deployed.
+          #
+          # repository: is deliberately omitted — the controller infers it from
+          # the Application's spec.source.repoURL, so there is only one place
+          # the repo URL is written down.
+          writeBackTarget: kustomization

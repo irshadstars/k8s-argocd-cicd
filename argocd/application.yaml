@@ -15,6 +15,17 @@ metadata:
   name: webapp
   namespace: argocd
 
+  # ---------------------------------------------------------------------------
+  # THE ANNOTATIONS BELOW ARE INERT ON argocd-image-updater v1.3.0.
+  #
+  # v1.3.0 is a controller-runtime rewrite that watches ImageUpdater CRs and
+  # never lists Applications looking for annotations. Its startup log is
+  # explicit: source="kind source: *v1alpha1.ImageUpdater".
+  #
+  # The live configuration is argocd/imageupdater.yaml. These are kept, unused,
+  # because every tutorial online still shows this form — leaving them visible
+  # with this note is more useful than deleting them and forgetting why.
+  # ---------------------------------------------------------------------------
   annotations:
     # Which images to track, as <alias>=<image>. The alias namespaces the
     # per-image settings below; it does not need to match anything in the
