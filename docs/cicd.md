@@ -229,6 +229,28 @@ manual tag edit**, plus an Image Updater commit in the log:
 git pull && git log --oneline -3   # expect a commit authored by your PAT
 ```
 
+## What has actually been verified
+
+Run on 2026-10-02 by pushing a one-line greeting change (`8fafad5`) and then touching
+nothing. Four of the five links are proven; the fifth is blocked on the credential below.
+
+| Link | Evidence |
+|---|---|
+| push → Actions | Build completed in ~1 min, `conclusion=success` |
+| Actions → GHCR | `sha-8fafad5` present as an OCI index with `linux/amd64` + `linux/arm64`, fetched with **no credentials** (which also proves the package is public) |
+| Updater detects the new tag | `Setting new image to ghcr.io/irshadstars/k8s-argocd-cicd:sha-8fafad5` |
+| Updater resolves the bump | `Successfully updated image 'sha-64d3a80' -> 'sha-8fafad5', but pending spec update` |
+| **Updater commits to Git** | ❌ `Could not update application spec: could not get creds for repo ...: secrets "git-creds" not found` |
+
+So the cycle ends at `errors=1`, and that single error names the one missing file. Create
+the secret (next section) and the following 2-minute poll closes the loop with no push and
+no rebuild — `sha-8fafad5` is already sitting in the registry waiting.
+
+Also observed: GitHub delivered the same push event **twice**, producing two identical runs
+for one commit. Harmless, because the tag is content-addressed and both runs produce the
+same bytes, but it wastes runner minutes. Fixed with a `concurrency` group keyed on the ref
+so a newer run cancels the one in flight.
+
 ## Verification commands
 
 ```bash

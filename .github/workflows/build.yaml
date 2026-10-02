@@ -20,6 +20,17 @@ on:
   # Lets you rebuild from the Actions tab without an empty commit.
   workflow_dispatch:
 
+# GitHub can deliver the same push event more than once, and a rapid series of
+# commits queues a run per commit when only the last one matters. Both waste
+# runner minutes building images nobody will deploy.
+#
+# Grouping by ref collapses them: a newer run cancels the one in flight. Safe
+# here because the build has no side effects beyond pushing an immutable,
+# content-addressed tag — a cancelled run leaves nothing half-finished.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
