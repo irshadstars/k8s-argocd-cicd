@@ -53,7 +53,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintf(w, "Hello from k8s-argocd-cicd\n\n")
+		fmt.Fprintf(w, "Hello from k8s-argocd-cicd -- deployed automatically, no kubectl\n\n")
 		fmt.Fprintf(w, "version:  %s\n", version)
 		fmt.Fprintf(w, "commit:   %s\n", commit)
 		fmt.Fprintf(w, "built:    %s\n", built)
